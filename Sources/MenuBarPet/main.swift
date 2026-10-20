@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import ServiceManagement
 import CoreGraphics
+import IOKit.pwr_mgt
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let pet = Pet()
@@ -40,6 +41,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var visibilityTarget: CGFloat = 1
     private var lastVisibilityPoll = Date.distantPast
     private var lastReactionsPoll = Date.distantPast
+    private var hideDuringVideo = UserDefaults.standard.object(forKey: "hideDuringVideo") as? Bool ?? true
+    private var videoPlaying = false
+    private var lastVideoPoll = Date.distantPast
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         dog.followEnabled = UserDefaults.standard.object(forKey: "follow") as? Bool ?? true
@@ -179,13 +183,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The window-list query is the costliest call here: poll it at 4 Hz, or every tick while fading.
         if shownAlpha != visibilityTarget || now.timeIntervalSince(lastVisibilityPoll) >= 0.25 {
             lastVisibilityPoll = now
-            visibilityTarget = menuBarVisibility(mouse: mouse, now: now)
+            if hideDuringVideo, now.timeIntervalSince(lastVideoPoll) >= 2 {
+                lastVideoPoll = now
+                videoPlaying = Self.isBrowserPlayingVideo()
+            }
+            visibilityTarget = (hideDuringVideo && videoPlaying) ? 0 : menuBarVisibility(mouse: mouse, now: now)
         }
         let target = visibilityTarget
         shownAlpha += (target - shownAlpha) * 0.4
         if abs(target - shownAlpha) < 0.02 { shownAlpha = target }
         strip.window.alphaValue = shownAlpha
-        if shownAlpha > 0 { strip.view.needsDisplay = true }
+        if shownAlpha > 0 {
+            if !strip.window.isVisible { strip.window.orderFrontRegardless() }
+            strip.view.needsDisplay = true
+        } else if strip.window.isVisible {
+            strip.window.orderOut(nil)   // fully hidden: stop WindowServer compositing the strip
+        }
         item.button?.toolTip = "\(pet.name): \(pet.mood)"
 
         saveCounter += 1
@@ -245,6 +258,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard coversScreen else { return false }
         let dockAutohides = UserDefaults(suiteName: "com.apple.dock")?.bool(forKey: "autohide") ?? false
         return dockAutohides || !dockOnScreen
+    }
+
+    /// Browsers hold a "prevent display sleep" assertion while a video plays (YouTube, Netflix, Prime...).
+    /// Also true for video calls in the browser, which is fine: the pet stays out of the way there too.
+    private static func isBrowserPlayingVideo() -> Bool {
+        var raw: Unmanaged<CFDictionary>?
+        guard IOPMCopyAssertionsByProcess(&raw) == kIOReturnSuccess,
+              let byPid = raw?.takeRetainedValue() as? [Int: [[String: Any]]] else { return false }
+        // Safari uses the first type; Chrome uses the second ("Video Wake Lock").
+        let displayTypes: Set<String> = ["PreventUserIdleDisplaySleep", "NoDisplaySleepAssertion"]
+        let browsers = ["chrome", "safari", "webkit", "firefox", "arc", "brave", "edge", "opera", "vivaldi"]
+        for (_, assertions) in byPid {
+            for a in assertions {
+                guard let type = a["AssertType"] as? String, displayTypes.contains(type) else { continue }
+                let name = (a["Process Name"] as? String ?? "").lowercased()
+                if browsers.contains(where: name.contains) { return true }
+            }
+        }
+        return false
     }
 
     private func updateReminders(dt: Double, now: Date) {
@@ -323,6 +355,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         add("Calendar reminders", "calendar", #selector(toggleCalendar), on: calendarEnabled)
         menu.addItem(.separator())
         header("Display")
+        add("Hide while watching video", "play.slash", #selector(toggleHideVideo), on: hideDuringVideo)
         add("Walk in front of menu text", "macwindow", #selector(toggleFront), on: strip.inFront)
         add("Snooze walk reminders (1 hr)", "alarm", #selector(snooze))
         add("Launch at Login", "power", #selector(toggleLogin), on: SMAppService.mainApp.status == .enabled)
@@ -353,6 +386,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleFollow() {
         controls.follow.toggle()
+    }
+
+    @objc private func toggleHideVideo() {
+        hideDuringVideo.toggle()
+        UserDefaults.standard.set(hideDuringVideo, forKey: "hideDuringVideo")
+        if !hideDuringVideo { videoPlaying = false }
     }
 
     @objc private func toggleFront() { strip.inFront.toggle() }

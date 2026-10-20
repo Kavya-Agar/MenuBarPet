@@ -782,16 +782,37 @@ final class Dog {
             let slide = CGFloat(eatTicks - 8) / CGFloat(Self.eatDuration - 8) * 10
             gx = dir > 0 ? x + spriteWidth - 3 + slide : x - 7 - slide
         }
-        ( g as NSString).draw(at: NSPoint(x: gx, y: y + bounce), withAttributes: [.font: NSFont.systemFont(ofSize: 10)])
+        Self.glyphImage(g).draw(at: NSPoint(x: gx, y: y + bounce), from: .zero, operation: .sourceOver, fraction: 1)
     }
+
+    /// Emoji rendered once to a bitmap: text layout every frame was the costliest part of drawing.
+    private static var glyphCache: [String: NSImage] = [:]
+    private static func glyphImage(_ g: String) -> NSImage {
+        if let img = glyphCache[g] { return img }
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10)]
+        let img = NSImage(size: (g as NSString).size(withAttributes: attrs))
+        img.lockFocus()
+        (g as NSString).draw(at: .zero, withAttributes: attrs)
+        img.unlockFocus()
+        glyphCache[g] = img
+        return img
+    }
+
+    private static let bubbleAttrs: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+        .foregroundColor: NSColor.black,
+    ]
+    private static var bubbleText = ""
+    private static var bubbleSize = NSSize.zero
 
     private func drawBubble(barHeight: CGFloat) {
         guard isAlerting, let text = alertText else { return }
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
-            .foregroundColor: NSColor.black,
-        ]
-        let size = (text as NSString).size(withAttributes: attrs)
+        let attrs = Self.bubbleAttrs
+        if Self.bubbleText != text {
+            Self.bubbleText = text
+            Self.bubbleSize = (text as NSString).size(withAttributes: attrs)
+        }
+        let size = Self.bubbleSize
         let rect = NSRect(x: x + spriteWidth + 14, y: (barHeight - size.height) / 2 - 1,
                           width: size.width + 12, height: size.height + 2)
         let r = (x + spriteWidth + 14 + rect.width > width)
