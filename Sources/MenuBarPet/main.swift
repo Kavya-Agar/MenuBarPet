@@ -37,6 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // menu bar visibility
     private var shownAlpha: CGFloat = 1
     private var lastInStrip = Date.distantPast
+    private var visibilityTarget: CGFloat = 1
+    private var lastVisibilityPoll = Date.distantPast
+    private var lastReactionsPoll = Date.distantPast
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         dog.followEnabled = UserDefaults.standard.object(forKey: "follow") as? Bool ?? true
@@ -83,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: 1 / Dog.fps, repeats: true) { [weak self] _ in
             self?.tick()
         }
+        timer?.tolerance = 0.2 / Dog.fps   // lets macOS coalesce our wakeups with other work
         RunLoop.main.add(timer!, forMode: .common)
 
         if calendarEnabled { startCalendar() }
@@ -158,7 +162,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dog.quiet = manualQuiet || focusActive
 
         if reactionsEnabled {
-            reactions.poll(now: now)
+            if now.timeIntervalSince(lastReactionsPoll) >= 1 {
+                lastReactionsPoll = now
+                reactions.poll(now: now)
+            }
             dog.mac = reactions.state
             if let t = reactions.state.pluggedInAt, t != lastPlug {
                 lastPlug = t
@@ -169,7 +176,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         dog.tick()
-        let target = menuBarVisibility(mouse: mouse, now: now)
+        // The window-list query is the costliest call here: poll it at 4 Hz, or every tick while fading.
+        if shownAlpha != visibilityTarget || now.timeIntervalSince(lastVisibilityPoll) >= 0.25 {
+            lastVisibilityPoll = now
+            visibilityTarget = menuBarVisibility(mouse: mouse, now: now)
+        }
+        let target = visibilityTarget
         shownAlpha += (target - shownAlpha) * 0.4
         if abs(target - shownAlpha) < 0.02 { shownAlpha = target }
         strip.window.alphaValue = shownAlpha
