@@ -1,0 +1,8 @@
+Dog sprites derived from vscode-pets by Anthony Shaw (https://github.com/tonybaloney/vscode-pets),
+licensed CC BY-ND 4.0. Recolored blue here for personal use only; the license forbids
+distributing modified versions, so do not share this app's sprites publicly.
+
+wolf/: sliced by tools/slice_wolf.py from a Minecraft wolf sprite sheet (Mojang artwork, via a fan-made sheet); personal use only, do not distribute.
+
+kirby/: original pixel art drawn by tools/make_kirby.py in the style of Nintendo/HAL's Kirby; personal use only, do not distribute.
+yoshi/: sliced by tools/slice_yoshi.py from the "DS Yoshi Sprites Recolor" sheet by llynog (Nintendo artwork); personal use only, do not distribute.
