@@ -97,3 +97,33 @@ def collared(sp, anim, already):
 
 
 write("wolf", collared, tamed_idle=True)
+
+
+def walk_cycle(folder, legs_top=15, split=16, swing=2):
+    """The sheet's walk row is the same pose seen from different angles, so the legs barely move.
+    Rebuild walk_* as a real cycle: keep walk_0's body and shear the back and front legs in opposite
+    directions (the feet travel further than the hips), lifting the pair that is passing through."""
+    out = os.path.join(ROOT, folder)
+    base = np.array(Image.open(os.path.join(out, "walk_0.png")))
+    # (back dx, front dx, lift) per frame: reach, pass, reach the other way, pass
+    cycle = [(-swing, swing, 0), (0, 0, 1), (swing, -swing, 0), (0, 0, 1)]
+    for old in os.listdir(out):
+        if old.startswith("walk_") and not old.startswith("walk_fast"):
+            os.remove(os.path.join(out, old))
+    h, w = base.shape[:2]
+    for i, (back, front, lift) in enumerate(cycle):
+        frame = np.zeros_like(base)
+        frame[:legs_top] = base[:legs_top]
+        for y in range(legs_top, h):
+            t = (y - legs_top + 1) / (h - legs_top)
+            for x0, x1, dx in ((0, split, back), (split, w, front)):
+                row = base[y, x0:x1]
+                shift = int(round(dx * t))
+                for x in np.nonzero(row[:, 3])[0]:
+                    nx = x0 + x + shift
+                    if 0 <= nx < w and 0 <= y - lift:
+                        frame[y - lift, nx] = row[x]
+        Image.fromarray(frame).save(os.path.join(out, f"walk_{i}.png"))
+
+
+walk_cycle("wolf")
